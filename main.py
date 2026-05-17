@@ -9,7 +9,23 @@ from database import engine, get_db
 # Crear las tablas automáticamente al inicializar
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="SMAT - Persistencia de Datos")
+# 1. CONFIGURACIÓN DE METADATOS GLOBALES (Punto 2 de la guía)
+app = FastAPI(
+    title="SMAT - Sistema de Monitoreo de Alerta Temprana",
+    description="""
+API robusta para la gestión y monitoreo de desastres naturales.
+Permite la telemetría de sensores en tiempo real y el cálculo de niveles de riesgo.
+
+**Entidades principales:**
+* **Estaciones:** Puntos de monitoreo físico.
+* **Lecturas:** Datos capturados por sensores.
+* **Riesgos:** Análisis de criticidad basado en umbrales.
+""",
+    version="1.0.0",
+    contact={
+        "name": "E.P. Ciencias de la Computación - UNMSM",
+    }
+)
 
 # --- MODELOS DE VALIDACIÓN (PYDANTIC) ---
 class EstacionCreate(BaseModel):
@@ -28,9 +44,15 @@ class LecturaCreate(BaseModel):
         from_attributes = True
 
 
-# --- ENDPOINTS REFACTORIZADOS ---
+# --- ENDPOINTS DOCUMENTADOS (Punto 3 y Retos de la guía) ---
 
-@app.post("/estaciones/", status_code=201)
+@app.post(
+    "/estaciones/", 
+    status_code=201,
+    tags=["Estaciones"],
+    summary="Registrar una nueva estación",
+    description="Inserta una nueva estación meteorológica en el sistema. El ID debe ser único."
+)
 def crear_estacion(estacion: EstacionCreate, db: Session = Depends(get_db)):
     existe = db.query(models.EstacionDB).filter(models.EstacionDB.id == estacion.id).first()
     if existe:
@@ -43,12 +65,24 @@ def crear_estacion(estacion: EstacionCreate, db: Session = Depends(get_db)):
     return {"msj": "Estación guardada en DB", "data": nueva_estacion}
 
 
-@app.get("/estaciones/", response_model=List[EstacionCreate])
+@app.get(
+    "/estaciones/", 
+    response_model=List[EstacionCreate],
+    tags=["Estaciones"],
+    summary="Listar todas las estaciones",
+    description="Retorna un arreglo con todas las estaciones de monitoreo registradas en la base de datos."
+)
 def listar_estaciones(db: Session = Depends(get_db)):
     return db.query(models.EstacionDB).all()
 
 
-@app.post("/lecturas/", status_code=201)
+@app.post(
+    "/lecturas/", 
+    status_code=201,
+    tags=["Telemetría"],
+    summary="Registrar una lectura de sensor",
+    description="Recibe el valor de un sensor (temperatura, nivel de río, etc.) asociado a una estación existente."
+)
 def registrar_lectura(lectura: LecturaCreate, db: Session = Depends(get_db)):
     estacion_existe = db.query(models.EstacionDB).filter(models.EstacionDB.id == lectura.estacion_id).first()
     if not estacion_existe:
@@ -60,7 +94,12 @@ def registrar_lectura(lectura: LecturaCreate, db: Session = Depends(get_db)):
     return {"status": "Lectura guardada en DB"}
 
 
-@app.get("/estaciones/{id}/riesgo")
+@app.get(
+    "/estaciones/{id}/riesgo",
+    tags=["Análisis de Riesgo"],
+    summary="Calcular nivel de criticidad",
+    description="Analiza la última lectura registrada de una estación para categorizar el riesgo en NORMAL, ALERTA o PELIGRO."
+)
 def obtener_riesgo(id: int, db: Session = Depends(get_db)):
     estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
     if not estacion:
@@ -80,7 +119,14 @@ def obtener_riesgo(id: int, db: Session = Depends(get_db)):
     return {"id": id, "valor": ultima_lectura, "nivel": nivel}
 
 
-@app.get("/estaciones/{id}/historial")
+# RETO 4.2: Endpoint con Tag "Reportes Históricos" y cálculo estadístico (Punto 4)
+@app.get(
+    "/estaciones/{id}/historial",
+    tags=["Reportes Históricos"],
+    summary="Obtener historial y métricas",
+    description="Realiza cálculos estadísticos (conteo y promedio) sobre todas las lecturas de una estación específica.",
+    responses={404: {"description": "Estación no encontrada"}}
+)
 def obtener_historial_y_promedio(id: int, db: Session = Depends(get_db)):
     estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
     if not estacion:
