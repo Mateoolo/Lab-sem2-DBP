@@ -9,64 +9,74 @@ class AddEstacionScreen extends StatefulWidget {
 }
 
 class _AddEstacionScreenState extends State<AddEstacionScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _idController = TextEditingController();
   final _nombreController = TextEditingController();
   final _ubicacionController = TextEditingController();
+  bool _isLoading = false;
 
-  void _guardar() async {
-    if (_formKey.currentState!.validate()) {
-      bool success = await ApiService().crearEstacion(
-        int.parse(_idController.text),
-        _nombreController.text,
-        _ubicacionController.text,
+  void _guardarEstacion() async {
+    if (_idController.text.isEmpty || _nombreController.text.isEmpty || _ubicacionController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, llena todos los campos')),
       );
+      return;
+    }
 
-      if (success) {
-        if (mounted) Navigator.pop(context, true);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error: No autorizado o Token expirado')),
-          );
-        }
-      }
+    setState(() => _isLoading = true);
+
+    // Parseamos el ID a número entero obligatoriamente
+    int id = int.parse(_idController.text.trim());
+    String nombre = _nombreController.text.trim();
+    String ubicacion = _ubicacionController.text.trim();
+
+    bool exito = await ApiService().crearEstacion(id, nombre, ubicacion);
+
+    setState(() => _isLoading = false);
+
+    if (exito && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Estación registrada con éxito en la DB')),
+      );
+      Navigator.pop(context, true); // Regresa al HomePage y le avisa que recargue la lista
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: No autorizado o formato inválido')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nueva Estación')),
-      body: Form(
-        key: _formKey,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _idController,
-                decoration: const InputDecoration(labelText: 'ID Numérico (Único)'),
-                keyboardType: TextInputType.number,
-                validator: (v) => v!.isEmpty ? 'Requerido' : null,
-              ),
-              TextFormField(
-                controller: _nombreController,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-                validator: (v) => v!.isEmpty ? 'Requerido' : null,
-              ),
-              TextFormField(
-                controller: _ubicacionController,
-                decoration: const InputDecoration(labelText: 'Ubicación'),
-                validator: (v) => v!.isEmpty ? 'Requerido' : null,
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _guardar,
-                child: const Text('Guardar Estación'),
-              )
-            ],
-          ),
+      appBar: AppBar(title: const Text('Nueva Estación - SMAT')),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _idController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'ID de la Estación (Número)'),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _nombreController,
+              decoration: const InputDecoration(labelText: 'Nombre de la Estación'),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _ubicacionController,
+              decoration: const InputDecoration(labelText: 'Ubicación / Región'),
+            ),
+            const SizedBox(height: 30),
+            _isLoading
+                ? const CircularProgressIndicator()
+                : ElevatedButton(
+                    style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                    onPressed: _guardarEstacion,
+                    child: const Text('Guardar Estación'),
+                  ),
+          ],
         ),
       ),
     );
