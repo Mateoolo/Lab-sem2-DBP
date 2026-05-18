@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app import models, schemas, database
-# Importamos las funciones de seguridad recién creadas
-from app.auth import crear_token_acceso, obtener_identidad_actual
+from app.auth import crear_token_acceso, obtener_usuario_actual, obtener_password_hash, verificar_password
 
-# Crear las tablas en la base de datos automáticamente
+# Crear las tablas automáticamente
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(
@@ -17,7 +16,6 @@ app = FastAPI(
     version="1.2.0"
 )
 
-# Middleware CORS (Manteniendo la interoperabilidad de la semana pasada)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,34 +24,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =====================================================
-# ENDPOINT DE SEGURIDAD (Simulación de Login)
-# =====================================================
+# Credenciales oficiales indicadas en el laboratorio
+USUARIO_DB = {
+    "username": "admin_smat",
+    "password_hash": obtener_password_hash("fisi_2026")
+}
+
 @app.post("/token", tags=["Seguridad"])
 async def login_para_obtener_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    # Simulación de credenciales fijas para la Fase I
-    if form_data.username == "admin_smat" and form_data.password == "fisi_2026":
-        token = crear_token_acceso({"sub": form_data.username})
-        return {"access_token": token, "token_type": "bearer"}
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, 
-        detail="Usuario o contraseña incorrectos"
-    )
+    if form_data.username != USUARIO_DB["username"] or not verificar_password(form_data.password, USUARIO_DB["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Usuario o contraseña incorrectos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = crear_token_acceso(data={"sub": form_data.username})
+    return {"access_token": token, "token_type": "bearer"}
 
-# =====================================================
-# ENDPOINTS DE INFRAESTRUCTURA Y TELEMETRÍA
-# =====================================================
-
-@app.post(
-    "/estaciones/", 
-    status_code=201, 
-    tags=["Estaciones"],
-    summary="Registrar una nueva estación (PROTEGIDO)"
-)
+@app.post("/estaciones/", status_code=201, tags=["Estaciones"], summary="Registrar una nueva estación (PROTEGIDO)")
 def crear_estacion(
     estacion: schemas.EstacionCreate, 
     db: Session = Depends(database.get_db),
-    usuario: str = Depends(obtener_identidad_actual) # <-- PROTECCIÓN JWT
+    usuario: str = Depends(obtener_usuario_actual)
 ):
     existe = db.query(models.EstacionDB).filter(models.EstacionDB.id == estacion.id).first()
     if existe:
@@ -63,35 +55,22 @@ def crear_estacion(
     db.add(nueva_estacion)
     db.commit()
     db.refresh(nueva_estacion)
-    return {"msj": "Estación guardada en DB", "data": nueva_estacion}
+    return {"msj": "Estación guardada en DB exitosamente", "creado_por": usuario, "data": nueva_estacion}
 
-
-@app.post(
-    "/lecturas/", 
-    status_code=201, 
-    tags=["Telemetría"],
-    summary="Registrar una lectura de sensor (PROTEGIDO)"
-)
+@app.post("/lecturas/", status_code=201, tags=["Telemetría"], summary="Registrar una lectura de sensor (PROTEGIDO)")
 def registrar_lectura(
     lectura: schemas.LecturaCreate, 
     db: Session = Depends(database.get_db),
-    usuario: str = Depends(obtener_identidad_actual) # <-- PROTECCIÓN JWT
+    usuario: str = Depends(obtener_usuario_actual)
 ):
-    # RETO DE INTEGRIDAD CRUZADA (Puntos 3 y 4 del Laboratorio 4.4)
     estacion_db = db.query(models.EstacionDB).filter(models.EstacionDB.id == lectura.estacion_id).first()
     if not estacion_db:
-        raise HTTPException(
-            status_code=404, 
-            detail="Error de Integridad: La estación no existe en la base de datos."
-        )
+        raise HTTPException(status_code=404, detail="Error de Integridad: La estación no existe.")
     
     nueva_lectura = models.LecturaDB(valor=lectura.valor, estacion_id=lectura.estacion_id)
     db.add(nueva_lectura)
     db.commit()
-    return {"status": "Lectura guardada en DB con validación de identidad cruzada"}
-
-
-# --- Endpoints Públicos de Lectura (No requieren Token) ---
+    return {"status": "Lectura guardada en DB con validación de identidad cruzada", "registrado_por": usuario}
 
 @app.get("/estaciones/", response_model=List[schemas.EstacionCreate], tags=["Estaciones"])
 def listar_estaciones(db: Session = Depends(database.get_db)):
@@ -124,11 +103,7 @@ def obtener_historial_y_promedio(id: int, db: Session = Depends(database.get_db)
     
     lecturas_estacion = db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).all()
     conteo = len(lecturas_estacion)
-    if conteo == 0:
-        promedio = 0.0
-    else:
-        total_valores = sum(l.valor for l in lecturas_estacion)
-        promedio = total_valores / conteo
+    promedio = 0.0 if conteo == 0 else sum(l.valor for l in lecturas_estacion) / conteo
         
     return {
         "estacion_id": id,

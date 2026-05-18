@@ -1,23 +1,45 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'estacion.dart';
+import 'services/auth_service.dart';
 
 class ApiService {
-  // Nota: Dejamos la IP local 127.0.0.1 para probar la app rápido desde Google Chrome
-  final String url = "http://127.0.0.1:8000/estaciones/";
+  final String baseUrl = "http://127.0.0.1:8000";
 
-  Future<List<Estacion>> fetchEstaciones() async {
+  Future<List<Map<String, dynamic>>> getEstaciones() async {
     try {
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse('$baseUrl/estaciones/'));
 
       if (response.statusCode == 200) {
-        List<dynamic> body = jsonDecode(response.body);
-        return body.map((dynamic item) => Estacion.fromJson(item)).toList();
+        List<dynamic> data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data);
       } else {
-        throw Exception("Error al conectar con el servidor backend");
+        throw Exception('Error al cargar estaciones');
       }
     } catch (e) {
-      throw Exception("No se pudo establecer conexión: $e");
+      return [];
+    }
+  }
+
+  Future<bool> crearEstacion(int id, String nombre, String ubicacion) async {
+    try {
+      final token = await AuthService().getToken();
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/estaciones/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'id': id,
+          'nombre': nombre,
+          'ubicacion': ubicacion,
+        }),
+      );
+
+      return response.statusCode == 201;
+    } catch (e) {
+      return false;
     }
   }
 }
