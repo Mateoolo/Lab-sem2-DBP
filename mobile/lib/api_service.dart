@@ -1,14 +1,17 @@
 import 'dart:convert';
+import 'dart:async'; // ¡Esencial para el TimeoutException!
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 
 class ApiService {
   final String baseUrl = "http://127.0.0.1:8000";
 
-  // 1. Obtener estaciones con su nivel de riesgo
+  // REQUERIMIENTO 1: Robustez ante caídas de red y Timeouts (Laboratorio 7.1)
   Future<List<Map<String, dynamic>>> getEstaciones() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/estaciones/'));
+      final response = await http
+          .get(Uri.parse('$baseUrl/estaciones/'))
+          .timeout(const Duration(seconds: 5)); // Evita esperas infinitas
 
       if (response.statusCode == 200) {
         List<dynamic> data = jsonDecode(response.body);
@@ -19,12 +22,16 @@ class ApiService {
           String nivelRiesgo = "NORMAL";
           
           try {
-            final riesgoRes = await http.get(Uri.parse('$baseUrl/estaciones/$id/riesgo'));
+            final riesgoRes = await http
+                .get(Uri.parse('$baseUrl/estaciones/$id/riesgo'))
+                .timeout(const Duration(seconds: 3));
             if (riesgoRes.statusCode == 200) {
               final riesgoData = jsonDecode(riesgoRes.body);
               nivelRiesgo = riesgoData['nivel'] ?? "NORMAL";
             }
-          } catch (_) {}
+          } catch (_) {
+            nivelRiesgo = "DESCONOCIDO"; // Si falla el endpoint de riesgo, no rompe la app
+          }
 
           estacionesConRiesgo.add({
             'id': est['id'],
@@ -35,36 +42,39 @@ class ApiService {
         }
         return estacionesConRiesgo;
       } else {
-        throw Exception('Error al cargar estaciones');
+        throw Exception('Error del servidor: ${response.statusCode}');
       }
+    } on TimeoutException catch (_) {
+      throw Exception('El servidor está tardando demasiado en responder.');
     } catch (e) {
-      return [];
+      throw Exception('No se pudo conectar con SMAT. ¿Está el servidor activo?');
     }
   }
 
-  // 2. CREAR ESTACIÓN (Corregido para mandar el JSON limpio que espera el diccionario)
-  Future<bool> crearEstacion(int id, String nombre, String ubicacion) async {
+  // MODIFICADO: Mantiene los parámetros requeridos sumando el nivel de riesgo
+  Future<bool> crearEstacion(int id, String nombre, String ubicacion, String riesgo) async {
     try {
       final token = await AuthService().getToken();
       final response = await http.post(
         Uri.parse('$baseUrl/estaciones/'),
         headers: {
-          'Content-Type': 'application/json', // Le avisa al backend que va un JSON plano
-          'Authorization': 'Bearer $token',  // Inserta la llave de seguridad JWT
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
         },
         body: jsonEncode({
           'id': id, 
           'nombre': nombre, 
-          'ubicacion': ubicacion
+          'ubicacion': ubicacion,
+          'riesgo': riesgo // Envía el nivel para que FastAPI cree la lectura correspondiente
         }),
-      );
+      ).timeout(const Duration(seconds: 5));
+      
       return response.statusCode == 201;
     } catch (e) {
       return false;
     }
   }
 
-  // 3. EDITAR ESTACIÓN (Corregido)
   Future<bool> editarEstacion(int id, String nombre, String ubicacion) async {
     try {
       final token = await AuthService().getToken();
@@ -74,27 +84,21 @@ class ApiService {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({
-          'nombre': nombre, 
-          'ubicacion': ubicacion
-        }),
-      );
+        body: jsonEncode({'nombre': nombre, 'ubicacion': ubicacion}),
+      ).timeout(const Duration(seconds: 5));
       return response.statusCode == 200;
     } catch (e) {
       return false;
     }
   }
 
-  // 4. ELIMINAR ESTACIÓN
   Future<bool> eliminarEstacion(int id) async {
     try {
       final token = await AuthService().getToken();
       final response = await http.delete(
         Uri.parse('$baseUrl/estaciones/$id'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 5));
       return response.statusCode == 200;
     } catch (e) {
       return false;

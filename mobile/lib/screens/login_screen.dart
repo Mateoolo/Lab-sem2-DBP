@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'home_page.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({Key? key}) : super(key: key);
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -12,24 +11,36 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _userController = TextEditingController();
   final _passController = TextEditingController();
-  bool _isLoading = false;
+  bool _isLoading = false; 
 
-  void _handleLogin() async {
+  void _manejarLogin() async {
+    if (_userController.text.isEmpty || _passController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Campos obligatorios vacíos')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
-    
-    bool exito = await AuthService().login(_userController.text, _passController.text);
-    
-    setState(() => _isLoading = false);
+
+    bool exito = await AuthService().login(
+      _userController.text.trim(),
+      _passController.text.trim(),
+    );
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
 
     if (exito && mounted) {
-      // Al ingresar con éxito, reemplaza la pantalla actual por el Home
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomePage()),
+      Navigator.pushNamedAndRemoveUntil(
+        context, 
+        '/home', 
+        (Route<dynamic> route) => false,
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Credenciales incorrectas o servidor apagado')),
+        const SnackBar(content: Text('Usuario o contraseña incorrectos')),
       );
     }
   }
@@ -37,41 +48,38 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SMAT - Autenticación')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.lock_person, size: 80, color: Colors.blue),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _userController,
-              decoration: const InputDecoration(
-                labelText: 'Usuario',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _passController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Contraseña',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 25),
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(50),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'SMAT - Inicio de Sesión',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: _userController,
+                  decoration: const InputDecoration(labelText: 'Usuario'),
+                ),
+                TextField(
+                  controller: _passController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Contraseña'),
+                ),
+                const SizedBox(height: 32),
+                _isLoading 
+                  ? const CircularProgressIndicator() 
+                  : ElevatedButton(
+                      onPressed: _manejarLogin,
+                      style: ElevatedButton.styleFrom(minimumSize: const Size(200, 45)),
+                      child: const Text('Ingresar al Sistema'),
                     ),
-                    onPressed: _handleLogin,
-                    child: const Text('Iniciar Sesión'),
-                  ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
